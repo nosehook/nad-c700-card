@@ -34,9 +34,12 @@ Entities are discovered automatically from the amplifier's device.
 [![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=nosehook&repository=nad-c700-card&category=plugin)
 
 <!-- ha-marketplace:exclude-start -->
-### HACS / Marketplace (custom repository)
-1. Add `https://github.com/nosehook/nad-c700-card` as a custom repository, category **Dashboard**.
-2. Install **NAD C 700 Card** and reload your browser.
+### Marketplace (Home Assistant 2026.11 and later)
+1. Click the button above, or open the **Marketplace** in Home Assistant and add `https://github.com/nosehook/nad-c700-card` by its link, category **Dashboard**.
+2. Install **NAD C 700 Card** and reload your browser. The Marketplace adds the dashboard resource for you.
+
+### HACS (Home Assistant before 2026.11)
+Add `https://github.com/nosehook/nad-c700-card` as a custom repository, category **Dashboard**, and install **NAD C 700 Card**.
 
 ### Manual
 1. Copy `nad-c700-card.js` to `/config/www/`.
