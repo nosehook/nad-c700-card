@@ -1,5 +1,5 @@
 /*
- * nad-c700-card  v1.0.0
+ * nad-c700-card  v1.1.0
  * Lovelace card that recreates the front of a NAD C 700 (V2) BluOS streaming amplifier:
  * 5" display (now playing / source / VU), VOLUME-MENU knob with tap zones, two arrow keys,
  * NAD status logo, the on-device menu and an optional BC1 remote bar.
@@ -12,9 +12,11 @@
  * Knob: tap centre = press (play/pause, select/save) · hold centre = open/close menu
  *       tap left/right = one step · hold left/right = keep turning (hold_sides: repeat)
  *       mouse wheel = turn
+ * Power: wakes the NAD by resuming the last track (falls back to a preset/source),
+ *        switches off by stopping playback (the NAD enters standby by itself after 15 min).
  */
 (() => {
-  const VERSION = "1.0.0";
+  const VERSION = "1.1.0";
   const TAG = "nad-c700-card";
 
   const T = {
@@ -27,6 +29,8 @@
       bluetooth: "Bluetooth", limits: "Volumegrenzen", vmin: "Minimum", vmax: "Maximum", replay: "Replay Gain",
       output: "Uitgang", on: "Aan", off: "Uit", volume: "Volume", locked: "Knop vergrendeld — houd vast om te ontgrendelen",
       unlocked: "Ontgrendeld", mute: "Gedempt", min: "min", no_player: "Geen NAD/BluOS-speler gevonden",
+      waking: "NAD wordt gewekt…", wake_fb: "Laatste nummer niet hervat — start", wake_fail: "Laatste nummer niet hervat",
+      off_confirm: "Nogmaals tikken om te stoppen", stopped_sb: "Gestopt — standby na 15 min", power: "Aan/uit",
     },
     en: {
       standby: "Standby", offline: "Offline", paused: "Paused", stopped: "Stopped", menu: "Menu",
@@ -37,6 +41,8 @@
       bluetooth: "Bluetooth", limits: "Volume limits", vmin: "Minimum", vmax: "Maximum", replay: "Replay Gain",
       output: "Output", on: "On", off: "Off", volume: "Volume", locked: "Knob locked — hold to unlock",
       unlocked: "Unlocked", mute: "Muted", min: "min", no_player: "No NAD/BluOS player found",
+      waking: "Waking the NAD…", wake_fb: "Could not resume — starting", wake_fail: "Could not resume the last track",
+      off_confirm: "Tap again to stop", stopped_sb: "Stopped — standby after 15 min", power: "Power",
     },
   };
 
@@ -66,7 +72,9 @@
     hold_sides: "repeat",
     knob_lock: false,
     show_remote: true,
-    remote_presets: 6,
+    wake_fallback: "",
+    confirm_off: true,
+    remote_presets: 5,
     default_view: "auto",
     dark_mode: "follow",
     hide_menu: [],
@@ -129,7 +137,7 @@
     .volov.show { opacity:1; }
     .volov .bar { height:5px; } .volov .bar > i { background:var(--nad-accent); }
     .volov b { min-width:3.2em; text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
-    .toast { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,.82); color:#fff;
+    .toast { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,.9); color:#fff;
       padding:3% 5%; border-radius:6px; font-size:clamp(9px,2.6cqi,13px); white-space:nowrap; opacity:0; transition:opacity .25s; pointer-events:none; }
     .toast.show { opacity:1; }
     /* menu */
@@ -148,6 +156,14 @@
     .mrow .chev { opacity:.6; }
     /* ---------- controls ---------- */
     .ctrl { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
+    .toprow { display:flex; align-items:center; justify-content:space-between; width:100%; }
+    .pwr { width:24px; height:24px; border-radius:50%; border:none; cursor:pointer; display:grid; place-items:center; padding:0;
+      background:linear-gradient(180deg,#3a3d42,#222428); box-shadow:0 0 0 1px #111, inset 0 1px 0 rgba(255,255,255,.12);
+      color:#6b7178; font-size:13px; line-height:1; touch-action:manipulation; transition:color .3s, box-shadow .3s; }
+    .pwr.on { color:#f4f7fb; box-shadow:0 0 0 1px #111, 0 0 6px rgba(255,255,255,.35), inset 0 1px 0 rgba(255,255,255,.12); }
+    .pwr.confirm { color:#fff; background:var(--error-color,#db4437); animation:pulse 1s ease-in-out infinite; }
+    .pwr.busy { animation:pulse .8s ease-in-out infinite; }
+    @keyframes pulse { 50% { filter:brightness(1.4); } }
     .logo { font:800 clamp(13px,3.4cqi,19px)/1 "Arial Black",Arial,sans-serif; letter-spacing:1px; color:#5a5f66;
       align-self:flex-end; transition:color .4s,text-shadow .4s; user-select:none; }
     .logo.on { color:var(--nad-led); text-shadow:0 0 6px rgba(255,255,255,.65); }
@@ -239,6 +255,8 @@
             { name: "menu_timeout", selector: { number: { min: 5, max: 120, step: 5, mode: "slider", unit_of_measurement: "s" } } },
           ] },
           { type: "expandable", name: "", title: "Extra's", icon: "mdi:remote", flatten: true, schema: [
+            { name: "wake_fallback", selector: { text: {} } },
+            { name: "confirm_off", selector: { boolean: {} } },
             { name: "show_remote", selector: { boolean: {} } },
             { name: "remote_presets", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } },
             { name: "language", selector: sel([{ value: "nl", label: "Nederlands" }, { value: "en", label: "English" }]) },
@@ -253,11 +271,14 @@
           step: "Stap per klik", volume_unit: "Volume tonen in", hold_sides: "Vasthouden links/rechts",
           knob_lock: "Knop vergrendelen (vasthouden ontgrendelt 30 s)", hide_menu: "Verberg in menu",
           menu_timeout: "Menu sluit na", show_remote: "BC1-afstandsbediening tonen",
+          wake_fallback: "Aanzetten: reserve als het laatste nummer niet start", confirm_off: "Uitzetten: nogmaals tikken ter bevestiging",
           remote_presets: "Aantal presetknoppen", language: "Taal",
         }[s.name] ?? s.name),
         computeHelper: (s) => ({
           default_view: "Automatisch: hoes + tekst bij streaming, bronnaam bij CD/Phono/Line/Optical/HDMI.",
           volume_unit: "dB wordt berekend tussen je volumegrenzen en is een benadering.",
+          wake_fallback: "Naam van een preset of ingang, bijv. Qmusic of CD. Leeg = geen reserve.",
+          confirm_off: "Uitzetten stopt het afspelen; de NAD gaat na 15 minuten zelf in standby.",
         }[s.name]),
       };
     }
@@ -327,7 +348,7 @@
               <div class="volov" id="volov"><span>${this.t("volume")}</span><div class="bar"><i id="volbar"></i></div><b id="volval"></b></div>
               <div class="toast" id="toast"></div><div class="glare"></div></div>
             <div class="ctrl">
-              <div class="logo" id="logo">NAD</div>
+              <div class="toprow"><button class="pwr" id="pwr" aria-label="Aan/uit" title="Aan/uit">⏻</button><div class="logo" id="logo">NAD</div></div>
               <div class="knobwrap" id="knob" role="slider" aria-label="Volume / menu" tabindex="0">
                 <svg class="ring" id="ring" viewBox="0 0 120 120"><circle cx="60" cy="60" r="55"/></svg>
                 <div class="knob"><div class="ind" id="ind"></div><div class="cap"></div></div>
@@ -345,6 +366,7 @@
       this.$("aprev").addEventListener("click", (e) => { e.stopPropagation(); this._arrow(-1); });
       this.$("anext").addEventListener("click", (e) => { e.stopPropagation(); this._arrow(1); });
       this.$("lcd").addEventListener("click", (e) => this._lcdClick(e));
+      this.$("pwr").addEventListener("click", (e) => { e.stopPropagation(); this._power(); });
       this.$("remote").addEventListener("click", (e) => this._remoteClick(e));
       this._built = true;
     }
@@ -610,6 +632,43 @@
       top.idx = i; this._menuPress();
     }
 
+    /* ---------------- power ---------------- */
+    _isActive() { const s = this.st(this._e?.player)?.state; return s === "playing" || s === "paused" || s === "buffering"; }
+    _power() {
+      const id = this._e.player; if (!id) return;
+      if (this._isActive()) {
+        if (this._config.confirm_off !== false && !this._pwrConfirm) {
+          this._pwrConfirm = true; this._toast(this.t("off_confirm")); this._renderPower();
+          clearTimeout(this._pwrT); this._pwrT = setTimeout(() => { this._pwrConfirm = false; this._renderPower(); }, 4000);
+          return;
+        }
+        this._pwrConfirm = false; clearTimeout(this._pwrT);
+        this.call("media_player", "media_stop", { entity_id: id });
+        this._toast(this.t("stopped_sb")); this._renderPower();
+        return;
+      }
+      // wake: resume last track, fall back to a preset / input after 5 s
+      this._waking = true; this._renderPower(); this._toast(this.t("waking"));
+      this.call("media_player", "media_play", { entity_id: id });
+      clearTimeout(this._wakeT);
+      this._wakeT = setTimeout(() => {
+        this._waking = false;
+        if (this.st(id)?.state === "playing") { this._renderPower(); return; }
+        const fb = String(this._config.wake_fallback || "").trim();
+        if (!fb) { this._toast(this.t("wake_fail")); this._renderPower(); return; }
+        const inPresets = this._presets().some((x) => x.toLowerCase() === fb.toLowerCase());
+        const list = inPresets ? this._presets() : this._sources();
+        const name = list.find((x) => x.toLowerCase() === fb.toLowerCase()) || fb;
+        this.call("media_player", "select_source", { entity_id: inPresets ? this._e.presets : id, source: name });
+        this._toast(`${this.t("wake_fb")} ${name}`); this._renderPower();
+      }, 5000);
+    }
+    _renderPower() {
+      const b = this.$("pwr"); if (!b) return;
+      b.className = `pwr${this._isActive() ? " on" : ""}${this._pwrConfirm ? " confirm" : ""}${this._waking ? " busy" : ""}`;
+      b.title = this.t("power");
+    }
+
     /* ---------------- remote ---------------- */
     _renderRemote() {
       const r = this.$("remote");
@@ -619,6 +678,8 @@
       const muted = !!p?.attributes.is_volume_muted, playing = p?.state === "playing";
       const presets = this._presets().slice(0, Number(this._config.remote_presets) || 0);
       const html = `
+        <button class="rb${this._isActive() ? " on" : ""}" data-a="power" title="${this.t("power")}"><ha-icon icon="mdi:power"></ha-icon></button>
+        <span class="sep"></span>
         <button class="rb${muted ? " on" : ""}" data-a="mute" title="Mute"><ha-icon icon="mdi:volume-${muted ? "off" : "mute"}"></ha-icon></button>
         <button class="rb" data-a="vdn" title="Vol −"><ha-icon icon="mdi:volume-minus"></ha-icon></button>
         <button class="rb" data-a="vup" title="Vol +"><ha-icon icon="mdi:volume-plus"></ha-icon></button>
@@ -633,6 +694,7 @@
     _remoteClick(e) {
       const b = e.target.closest(".rb"); if (!b) return;
       const id = this._e.player, a = b.dataset.a;
+      if (a === "power") return this._power();
       if (a === "mute") this.call("media_player", "volume_mute", { entity_id: id, is_volume_muted: !this.st(id)?.attributes.is_volume_muted });
       else if (a === "vdn" || a === "vup") this._volumeStep(a === "vup" ? 1 : -1);
       else if (a === "prev") this.call("media_player", "media_previous_track", { entity_id: id });
@@ -668,6 +730,7 @@
       const lcd = this.$("lcd"), e = this._e || {}, p = this.st(e.player);
       const logo = this.$("logo"), knob = this.$("knob");
       knob.classList.toggle("locked", this._isLocked());
+      this._renderPower();
       if (!p) { lcd.className = "lcd off"; lcd.innerHTML = `<div class="stby">${this.t("no_player")}</div>`; logo.className = "logo"; this._renderRemote(); return; }
       const off = p.state === "off" || BAD.has(p.state);
       const dm = this._config.dark_mode;

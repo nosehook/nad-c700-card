@@ -15,8 +15,9 @@ A Lovelace card for Home Assistant that recreates the front panel of the **NAD C
   - mouse wheel and keyboard arrows also turn the knob
 - **Volume overlay** on the display while turning, in % or (approximate) dB between your volume limits.
 - **Menu** as on the amplifier: Sources, Presets, Playback (shuffle/repeat) and Settings: sleep timer, tone controls (bass, treble, balance), subwoofer, display (auto brightness, brightness, dark mode, indicator), Bluetooth mode, volume limits, Replay Gain and output mode. Change a value with the knob or arrows and press to save; rows can also be tapped.
+- **Power button**: wakes the amplifier from network standby by resuming the last track (like pressing play in the BluOS app), with an optional fallback preset or input if nothing starts within 5 seconds. Switching off stops playback; the C 700 then goes to standby by itself after 15 minutes (*Amplifier Standby*).
 - **NAD logo** acts as the status indicator and follows the *Indicator brightness* setting.
-- **BC1 remote bar**: mute, volume, previous/play-pause/next and preset buttons.
+- **BC1 remote bar**: power, mute, volume, previous/play-pause/next and preset buttons.
 - Optional **knob lock** for wall tablets (hold to unlock for 30 s).
 - **Visual editor**: configure everything from the dashboard UI.
 - Dutch and English labels.
@@ -64,13 +65,15 @@ type: custom:nad-c700-card
 | `knob_lock` | `false` | Lock the knob; hold it to unlock for 30 s |
 | `hide_menu` | `[]` | Menu items to hide: `sources`, `presets`, `playback`, `sleep`, `tone`, `subwoofer`, `display`, `bluetooth`, `limits`, `replay`, `output` |
 | `menu_timeout` | `30` | Seconds before the menu closes |
+| `wake_fallback` | – | Preset or input to start when the last track does not resume (e.g. `Qmusic`, `CD`) |
+| `confirm_off` | `true` | Tap the power button twice to stop playback |
 | `show_remote` | `true` | Show the BC1 remote bar |
-| `remote_presets` | `6` | Number of preset buttons on the remote bar |
+| `remote_presets` | `5` | Number of preset buttons on the remote bar |
 | `language` | `nl` | `nl` or `en` |
 
 ### Notes
 
-- Home Assistant cannot switch the C 700 on or off, so there is no standby button; the amplifier goes to standby by itself.
+- There is no direct standby command: the power button wakes the amplifier with *play* and switches it off by stopping playback, after which it enters standby by itself.
 - The VU meters are an animation; BluOS does not report audio levels.
 
 ## License
