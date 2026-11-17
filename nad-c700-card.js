@@ -1,5 +1,5 @@
 /*
- * nad-c700-card  v1.1.0
+ * nad-c700-card  v1.1.1
  * Lovelace card that recreates the front of a NAD C 700 (V2) BluOS streaming amplifier:
  * 5" display (now playing / source / VU), VOLUME-MENU knob with tap zones, two arrow keys,
  * NAD status logo, the on-device menu and an optional BC1 remote bar.
@@ -16,7 +16,7 @@
  *        switches off by stopping playback (the NAD enters standby by itself after 15 min).
  */
 (() => {
-  const VERSION = "1.1.0";
+  const VERSION = "1.1.1";
   const TAG = "nad-c700-card";
 
   const T = {
@@ -757,14 +757,21 @@
           <text x="10" y="20">-20</text><text x="44" y="15">-3</text><text x="78" y="20">+3</text><text x="8" y="62">${ch ? "R" : "L"}</text>
           <line class="needle" id="n${ch}" x1="50" y1="62" x2="50" y2="14"/></svg>`).join("")}</div>`;
       } else {
-        const art = `<div class="art" style="${pic ? `background-image:url('${pic}')` : ""}">${pic ? "" : "♪"}</div>`;
+        // Artwork URL comes from stream metadata: never put it in markup, it is set on the element below.
+        const art = `<div class="art">${pic ? "" : "♪"}</div>`;
         if (view === "art") body = `<div class="np art-only">${art}</div>`;
         else body = `<div class="np">${art}<div class="txt"><div class="t1">${esc(a.media_title || src)}</div>
           <div class="t2">${esc(a.media_album_name || "")}</div><div class="t3">${esc(a.media_artist || "")}</div></div></div>`;
       }
       const prog = a.media_duration ? `<div class="prog"><span id="pcur"></span><div class="bar"><i id="pbar"></i></div><span>${fmtTime(a.media_duration)}</span></div>` : "";
       const html = sbar + body + prog;
-      if (html !== this._lastLcd) { lcd.innerHTML = html; this._lastLcd = html; }
+      const key = html + "\u0000" + (pic || "");
+      if (key !== this._lastLcd) {
+        lcd.innerHTML = html;
+        const artEl = pic && lcd.querySelector(".art");
+        if (artEl) artEl.style.backgroundImage = `url(${JSON.stringify(String(pic))})`;
+        this._lastLcd = key;
+      }
       this._updateProgress();
       if (view === "vu" && p.state === "playing") this._startVu(); else this._stopVu();
       this._renderRemote();
